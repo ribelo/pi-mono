@@ -318,8 +318,8 @@ export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", Simp
 		return streamBedrock(model, context, { ...base, reasoning: undefined } satisfies BedrockOptions);
 	}
 
-	if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
-		if (supportsAdaptiveThinking(model.id)) {
+	if (isClaudeModel(model)) {
+		if (supportsAdaptiveThinking(model)) {
 			return streamBedrock(model, context, {
 				...base,
 				reasoning: options.reasoning,
@@ -477,17 +477,68 @@ function handleContentBlockStop(
 }
 
 /**
- * Check if the model supports adaptive thinking (Opus 4.6+, Sonnet 4.6).
+ * Check if the model is a Claude model by examining both id and name.
+ * This supports custom models registered via application inference profiles
+ * where the id is an ARN that doesn't contain "claude".
  */
-function supportsAdaptiveThinking(modelId: string): boolean {
-	return (
-		modelId.includes("opus-4-6") ||
-		modelId.includes("opus-4.6") ||
-		modelId.includes("opus-4-7") ||
-		modelId.includes("opus-4.7") ||
-		modelId.includes("sonnet-4-6") ||
-		modelId.includes("sonnet-4.6")
-	);
+function isClaudeModel(model: Model<"bedrock-converse-stream">): boolean {
+	const id = model.id.toLowerCase();
+	const name = model.name.toLowerCase();
+	return id.includes("claude") || name.includes("claude");
+}
+
+/**
+ * Check if the model supports adaptive thinking.
+ * Claude 4.5+ and all newer Claude models use adaptive thinking.
+ * Older models (3.5, 3.7, 4.0, 4.1) use budget-based thinking.
+ */
+function supportsAdaptiveThinking(model: Model<"bedrock-converse-stream">): boolean {
+	const id = model.id.toLowerCase();
+	const name = model.name.toLowerCase();
+
+	if (
+		id.includes("opus-4-6") ||
+		id.includes("opus-4.6") ||
+		id.includes("opus-4-7") ||
+		id.includes("opus-4.7") ||
+		id.includes("sonnet-4-6") ||
+		id.includes("sonnet-4.6") ||
+		id.includes("sonnet-4-7") ||
+		id.includes("sonnet-4.7") ||
+		id.includes("opus-4-5") ||
+		id.includes("opus-4.5") ||
+		id.includes("sonnet-4-5") ||
+		id.includes("sonnet-4.5") ||
+		id.includes("haiku-4-5") ||
+		id.includes("haiku-4.5")
+	) {
+		return true;
+	}
+
+	if (
+		name.includes("opus 4.5") ||
+		name.includes("opus 4.6") ||
+		name.includes("opus 4.7") ||
+		name.includes("sonnet 4.5") ||
+		name.includes("sonnet 4.6") ||
+		name.includes("sonnet 4.7") ||
+		name.includes("haiku 4.5") ||
+		name.includes("haiku 4.6") ||
+		name.includes("haiku 4.7")
+	) {
+		return true;
+	}
+
+	const versionMatch = `${id} ${name}`.match(/claude[- ]\w+[- ](\d+)[.-](\d+)/);
+	if (versionMatch) {
+		const major = parseInt(versionMatch[1], 10);
+		const minor = parseInt(versionMatch[2], 10);
+		if (major > 4 || (major === 4 && minor >= 5)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 function mapThinkingLevelToEffort(
@@ -536,24 +587,36 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
  * For base models and system-defined inference profiles the model ID / ARN
  * contains the model name, so we can decide locally.
  *
- * For application inference profiles (whose ARNs don't contain the model name),
- * set AWS_BEDROCK_FORCE_CACHE=1 to enable cache points.  Amazon Nova models
- * have automatic caching and don't need explicit cache points.
+ * For application inference profiles whose ARNs don't contain the model name,
+ * we fall back to the human-readable model name and published cache pricing
+ * metadata when available. Amazon Nova models have automatic caching and don't
+ * need explicit cache points.
  */
 function supportsPromptCaching(model: Model<"bedrock-converse-stream">): boolean {
-	const id = model.id.toLowerCase();
-	if (!id.includes("claude")) {
-		// Application inference profiles don't contain the model name in the ARN.
-		// Allow users to force cache points via environment variable.
-		if (typeof process !== "undefined" && process.env.AWS_BEDROCK_FORCE_CACHE === "1") return true;
-		return false;
+	if (model.cost.cacheRead || model.cost.cacheWrite) {
+		return true;
 	}
-	// Claude 4.x models (opus-4, sonnet-4, haiku-4)
-	if (id.includes("-4-") || id.includes("-4.")) return true;
-	// Claude 3.7 Sonnet
-	if (id.includes("claude-3-7-sonnet")) return true;
-	// Claude 3.5 Haiku
-	if (id.includes("claude-3-5-haiku")) return true;
+
+	const id = model.id.toLowerCase();
+	const name = model.name.toLowerCase();
+	const isSupportedClaudeModel =
+		isClaudeModel(model) &&
+		(id.includes("claude-3-5-haiku") ||
+			id.includes("claude-3-5-sonnet") ||
+			id.includes("claude-3-7-sonnet") ||
+			id.includes("-4-") ||
+			id.includes("-4.") ||
+			name.includes("haiku 3.5") ||
+			name.includes("sonnet 3.5") ||
+			name.includes("sonnet 3.7") ||
+			name.includes("haiku 4") ||
+			name.includes("sonnet 4") ||
+			name.includes("opus 4"));
+
+	if (isSupportedClaudeModel) {
+		return true;
+	}
+
 	return false;
 }
 
@@ -564,8 +627,7 @@ function supportsPromptCaching(model: Model<"bedrock-converse-stream">): boolean
  * "This model doesn't support the reasoningContent.reasoningText.signature field"
  */
 function supportsThinkingSignature(model: Model<"bedrock-converse-stream">): boolean {
-	const id = model.id.toLowerCase();
-	return id.includes("anthropic.claude") || id.includes("anthropic/claude");
+	return isClaudeModel(model);
 }
 
 function buildSystemPrompt(
@@ -858,11 +920,11 @@ function buildAdditionalModelRequestFields(
 		return undefined;
 	}
 
-	if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
+	if (isClaudeModel(model)) {
 		// GovCloud Bedrock currently rejects the Claude thinking.display field.
 		// Omit it there until the GovCloud Converse schema catches up.
 		const display = isGovCloudBedrockTarget(model, options) ? undefined : (options.thinkingDisplay ?? "summarized");
-		const result: Record<string, any> = supportsAdaptiveThinking(model.id)
+		const result: Record<string, any> = supportsAdaptiveThinking(model)
 			? {
 					thinking: { type: "adaptive", ...(display !== undefined ? { display } : {}) },
 					output_config: { effort: mapThinkingLevelToEffort(options.reasoning, model.id) },
@@ -889,7 +951,7 @@ function buildAdditionalModelRequestFields(
 					};
 				})();
 
-		if (!supportsAdaptiveThinking(model.id) && (options.interleavedThinking ?? true)) {
+		if (!supportsAdaptiveThinking(model) && (options.interleavedThinking ?? true)) {
 			result.anthropic_beta = ["interleaved-thinking-2025-05-14"];
 		}
 

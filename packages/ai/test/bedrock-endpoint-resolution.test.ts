@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const bedrockMock = vi.hoisted(() => ({
 	constructorCalls: [] as Array<Record<string, unknown>>,
+	commandInputs: [] as unknown[],
 }));
 
 vi.mock("@aws-sdk/client-bedrock-runtime", () => {
@@ -22,6 +23,7 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 
 		constructor(input: unknown) {
 			this.input = input;
+			bedrockMock.commandInputs.push(input);
 		}
 	}
 
@@ -45,7 +47,7 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 });
 
 import { getModel } from "../src/models.js";
-import { streamBedrock } from "../src/providers/amazon-bedrock.js";
+import { streamBedrock, streamSimpleBedrock } from "../src/providers/amazon-bedrock.js";
 import type { Context, Model } from "../src/types.js";
 
 const context: Context = {
@@ -58,6 +60,7 @@ const originalAwsProfile = process.env.AWS_PROFILE;
 
 beforeEach(() => {
 	bedrockMock.constructorCalls.length = 0;
+	bedrockMock.commandInputs.length = 0;
 	delete process.env.AWS_REGION;
 	delete process.env.AWS_DEFAULT_REGION;
 	delete process.env.AWS_PROFILE;
@@ -127,5 +130,41 @@ describe("bedrock endpoint resolution", () => {
 
 		expect(config.endpoint).toBe("https://bedrock-vpc.example.com");
 		expect(config.region).toBe("us-west-2");
+	});
+
+	it("uses the application inference profile ARN region when baseUrl is not a URL", async () => {
+		const baseModel = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-7");
+		const model: Model<"bedrock-converse-stream"> = {
+			...baseModel,
+			id: "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/profile-id",
+			name: "Private Claude Opus 4.7",
+			baseUrl: "placeholder",
+		};
+
+		const config = await captureClientConfig(model);
+
+		expect(config.endpoint).toBeUndefined();
+		expect(config.region).toBe("us-west-2");
+	});
+
+	it("detects Claude capabilities by model name for ARN-based inference profiles", async () => {
+		const baseModel = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-7");
+		const model: Model<"bedrock-converse-stream"> = {
+			...baseModel,
+			id: "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/profile-id",
+			name: "Private Claude Opus 4.7",
+			baseUrl: "placeholder",
+			reasoning: true,
+		};
+
+		await streamSimpleBedrock(model, context, { reasoning: "high", cacheRetention: "none" }).result();
+
+		expect(bedrockMock.commandInputs).toHaveLength(1);
+		expect(bedrockMock.commandInputs[0]).toMatchObject({
+			additionalModelRequestFields: {
+				thinking: { type: "adaptive", display: "summarized" },
+				output_config: { effort: "high" },
+			},
+		});
 	});
 });

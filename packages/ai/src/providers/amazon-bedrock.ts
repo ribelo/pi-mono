@@ -117,18 +117,16 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 		};
 		const configuredRegion = getConfiguredBedrockRegion(options);
 		const hasConfiguredProfile = hasConfiguredBedrockProfile();
-		const endpointRegion = getStandardBedrockEndpointRegion(model.baseUrl);
-		const useExplicitEndpoint = shouldUseExplicitBedrockEndpoint(
-			model.baseUrl,
-			configuredRegion,
-			hasConfiguredProfile,
-		);
+		const endpoint = getBedrockEndpoint(model.baseUrl);
+		const endpointRegion = getStandardBedrockEndpointRegion(endpoint);
+		const modelArnRegion = getBedrockArnRegion(model.id);
+		const useExplicitEndpoint = shouldUseExplicitBedrockEndpoint(endpoint, configuredRegion, hasConfiguredProfile);
 
 		// Only pin standard AWS Bedrock runtime endpoints when no region/profile is configured.
 		// This preserves custom endpoints (VPC/proxy) from #3402 without forcing built-in
 		// catalog defaults such as us-east-1 to override AWS_REGION/AWS_PROFILE.
 		if (useExplicitEndpoint) {
-			config.endpoint = model.baseUrl;
+			config.endpoint = endpoint;
 		}
 
 		// Resolve bearer token for Bedrock API key auth.
@@ -144,6 +142,8 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				config.region = configuredRegion;
 			} else if (endpointRegion && useExplicitEndpoint) {
 				config.region = endpointRegion;
+			} else if (modelArnRegion) {
+				config.region = modelArnRegion;
 			} else if (!hasConfiguredProfile) {
 				config.region = "us-east-1";
 			}
@@ -185,7 +185,10 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 			// Non-Node environment (browser): fall back to us-east-1 since
 			// there's no config file resolution available.
 			config.region =
-				configuredRegion || (endpointRegion && useExplicitEndpoint ? endpointRegion : undefined) || "us-east-1";
+				configuredRegion ||
+				(endpointRegion && useExplicitEndpoint ? endpointRegion : undefined) ||
+				modelArnRegion ||
+				"us-east-1";
 		}
 
 		if (useBearerToken) {
@@ -867,6 +870,29 @@ function getConfiguredBedrockRegion(options: BedrockOptions): string | undefined
 	return options.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || undefined;
 }
 
+function getBedrockEndpoint(baseUrl: string | undefined): string | undefined {
+	if (!baseUrl) {
+		return undefined;
+	}
+
+	try {
+		new URL(baseUrl);
+		return baseUrl;
+	} catch {
+		return undefined;
+	}
+}
+
+function getBedrockArnRegion(modelId: string): string | undefined {
+	const parts = modelId.split(":", 6);
+	const region = parts[3];
+	if (parts.length < 6 || parts[0] !== "arn" || parts[2] !== "bedrock" || !region) {
+		return undefined;
+	}
+
+	return region;
+}
+
 function hasConfiguredBedrockProfile(): boolean {
 	if (typeof process === "undefined") {
 		return false;
@@ -890,10 +916,14 @@ function getStandardBedrockEndpointRegion(baseUrl: string | undefined): string |
 }
 
 function shouldUseExplicitBedrockEndpoint(
-	baseUrl: string,
+	baseUrl: string | undefined,
 	configuredRegion: string | undefined,
 	hasConfiguredProfile: boolean,
 ): boolean {
+	if (!baseUrl) {
+		return false;
+	}
+
 	const endpointRegion = getStandardBedrockEndpointRegion(baseUrl);
 	if (!endpointRegion) {
 		return true;

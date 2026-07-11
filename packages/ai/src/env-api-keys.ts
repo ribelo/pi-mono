@@ -99,6 +99,7 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		"kimi-coding": "KIMI_API_KEY",
 		"cloudflare-workers-ai": "CLOUDFLARE_API_KEY",
 		"cloudflare-ai-gateway": "CLOUDFLARE_API_KEY",
+		"amazon-bedrock": "AWS_BEARER_TOKEN_BEDROCK",
 		xiaomi: "XIAOMI_API_KEY",
 		"xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
 		"xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
@@ -153,25 +154,32 @@ export function getEnvApiKey(provider: string, env?: ProviderEnv): string | unde
 		}
 	}
 
-	if (provider === "amazon-bedrock") {
-		// Amazon Bedrock supports multiple credential sources:
-		// 1. AWS_PROFILE - named profile from ~/.aws/credentials
-		// 2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY - standard IAM keys
-		// 3. AWS_BEARER_TOKEN_BEDROCK - Bedrock bearer token
-		// 4. AWS_CONTAINER_CREDENTIALS_RELATIVE_URI - ECS task roles
-		// 5. AWS_CONTAINER_CREDENTIALS_FULL_URI - ECS task roles (full URI)
-		// 6. AWS_WEB_IDENTITY_TOKEN_FILE - IRSA (IAM Roles for Service Accounts)
-		if (
-			getProviderEnvValue("AWS_PROFILE", env) ||
-			(getProviderEnvValue("AWS_ACCESS_KEY_ID", env) && getProviderEnvValue("AWS_SECRET_ACCESS_KEY", env)) ||
-			getProviderEnvValue("AWS_BEARER_TOKEN_BEDROCK", env) ||
-			getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", env) ||
-			getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_FULL_URI", env) ||
-			getProviderEnvValue("AWS_WEB_IDENTITY_TOKEN_FILE", env)
-		) {
-			return "<authenticated>";
-		}
+	return undefined;
+}
+
+/** Check whether explicit or ambient environment authentication is configured. */
+export function hasEnvAuth(provider: KnownProvider, env?: ProviderEnv): boolean;
+export function hasEnvAuth(provider: string, env?: ProviderEnv): boolean;
+export function hasEnvAuth(provider: string, env?: ProviderEnv): boolean {
+	if (getEnvApiKey(provider, env)) return true;
+
+	if (provider === "google-vertex") {
+		return (
+			hasVertexAdcCredentials(env) &&
+			Boolean(getProviderEnvValue("GOOGLE_CLOUD_PROJECT", env) || getProviderEnvValue("GCLOUD_PROJECT", env)) &&
+			Boolean(getProviderEnvValue("GOOGLE_CLOUD_LOCATION", env))
+		);
 	}
 
-	return undefined;
+	if (provider === "amazon-bedrock") {
+		return Boolean(
+			getProviderEnvValue("AWS_PROFILE", env) ||
+				(getProviderEnvValue("AWS_ACCESS_KEY_ID", env) && getProviderEnvValue("AWS_SECRET_ACCESS_KEY", env)) ||
+				getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", env) ||
+				getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_FULL_URI", env) ||
+				getProviderEnvValue("AWS_WEB_IDENTITY_TOKEN_FILE", env),
+		);
+	}
+
+	return false;
 }

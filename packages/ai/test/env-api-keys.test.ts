@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
+import { findEnvKeys, getEnvApiKey, hasEnvAuth } from "../src/env-api-keys.ts";
+import type { ProviderEnv } from "../src/types.ts";
 
 const originalCopilotGitHubToken = process.env.COPILOT_GITHUB_TOKEN;
 const originalGhToken = process.env.GH_TOKEN;
 const originalGitHubToken = process.env.GITHUB_TOKEN;
 const originalZaiCodingCnApiKey = process.env.ZAI_CODING_CN_API_KEY;
+const ambientBedrockEnvs: ProviderEnv[] = [
+	{ AWS_PROFILE: "bedrock-profile" },
+	{ AWS_ACCESS_KEY_ID: "access-key", AWS_SECRET_ACCESS_KEY: "secret-key" },
+	{ AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: "/credentials" },
+	{ AWS_CONTAINER_CREDENTIALS_FULL_URI: "http://localhost/credentials" },
+	{ AWS_WEB_IDENTITY_TOKEN_FILE: "/var/run/secrets/token" },
+];
 
 afterEach(() => {
 	if (originalCopilotGitHubToken === undefined) {
@@ -56,5 +64,18 @@ describe("environment API keys", () => {
 
 		expect(findEnvKeys("zai-coding-cn")).toEqual(["ZAI_CODING_CN_API_KEY"]);
 		expect(getEnvApiKey("zai-coding-cn")).toBe("zai-coding-cn-token");
+	});
+
+	it("resolves a Bedrock bearer token as an API key", () => {
+		const env = { AWS_BEARER_TOKEN_BEDROCK: "bedrock-token", AWS_PROFILE: "bedrock-profile" };
+
+		expect(findEnvKeys("amazon-bedrock", env)).toEqual(["AWS_BEARER_TOKEN_BEDROCK"]);
+		expect(getEnvApiKey("amazon-bedrock", env)).toBe("bedrock-token");
+	});
+
+	it.each(ambientBedrockEnvs)("does not return ambient Bedrock credentials as an API key", (env) => {
+		expect(findEnvKeys("amazon-bedrock", env)).toBeUndefined();
+		expect(getEnvApiKey("amazon-bedrock", env)).toBeUndefined();
+		expect(hasEnvAuth("amazon-bedrock", env)).toBe(true);
 	});
 });

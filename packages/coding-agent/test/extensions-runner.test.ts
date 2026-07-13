@@ -578,7 +578,7 @@ describe("ExtensionRunner", () => {
 		it("gets message renderer by type", async () => {
 			const extCode = `
 				export default function(pi) {
-					pi.registerMessageRenderer("my-type", (message, options, theme) => null);
+					pi.registerMessageRenderer("my-type", (message, options, theme) => null, { background: "toolSuccessBg" });
 				}
 			`;
 			fs.writeFileSync(path.join(extensionsDir, "renderer.ts"), extCode);
@@ -588,6 +588,8 @@ describe("ExtensionRunner", () => {
 
 			const renderer = runner.getMessageRenderer("my-type");
 			expect(renderer).toBeDefined();
+			expect(renderer?.background).toBe("toolSuccessBg");
+			expect(renderer?.renderer).toBeTypeOf("function");
 
 			const missing = runner.getMessageRenderer("not-exists");
 			expect(missing).toBeUndefined();

@@ -1129,6 +1129,13 @@ export type MessageRenderer<T = unknown> = (
 	theme: Theme,
 ) => Component | undefined;
 
+export type MessageRendererBackground = "customMessageBg" | "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
+
+export interface MessageRendererRegistration<T = unknown> {
+	renderer: MessageRenderer<T>;
+	background?: MessageRendererBackground;
+}
+
 export type EntryRenderer<T = unknown> = (
 	entry: CustomEntry<T>,
 	options: EntryRenderOptions,
@@ -1253,7 +1260,11 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	/** Register a custom renderer for CustomMessageEntry. */
-	registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
+	registerMessageRenderer<T = unknown>(
+		customType: string,
+		renderer: MessageRenderer<T>,
+		options?: { background?: MessageRendererBackground },
+	): void;
 
 	/** Register a custom renderer for CustomEntry. Custom entries do not participate in LLM context. */
 	registerEntryRenderer<T = unknown>(customType: string, renderer: EntryRenderer<T>): void;
@@ -1639,7 +1650,7 @@ export interface Extension {
 	sourceInfo: SourceInfo;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool>;
-	messageRenderers: Map<string, MessageRenderer>;
+	messageRenderers: Map<string, MessageRendererRegistration>;
 	entryRenderers?: Map<string, EntryRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;

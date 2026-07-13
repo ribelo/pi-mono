@@ -37,6 +37,7 @@ import type {
 	ExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
+	MessageRendererBackground,
 	ProviderConfig,
 	RegisteredCommand,
 	ToolDefinition,
@@ -265,9 +266,16 @@ function createExtensionAPI(
 			}
 		},
 
-		registerMessageRenderer<T>(customType: string, renderer: MessageRenderer<T>): void {
+		registerMessageRenderer<T>(
+			customType: string,
+			renderer: MessageRenderer<T>,
+			options?: { background?: MessageRendererBackground },
+		): void {
 			runtime.assertActive();
-			extension.messageRenderers.set(customType, renderer as MessageRenderer);
+			extension.messageRenderers.set(customType, {
+				renderer: renderer as MessageRenderer,
+				...(options?.background === undefined ? {} : { background: options.background }),
+			});
 		},
 
 		registerEntryRenderer<T>(customType: string, renderer: EntryRenderer<T>): void {

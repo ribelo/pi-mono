@@ -1,7 +1,7 @@
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { Component } from "@earendil-works/pi-tui";
 import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
-import type { MessageRenderer } from "../../../core/extensions/types.ts";
+import type { MessageRendererRegistration } from "../../../core/extensions/types.ts";
 import type { CustomMessage } from "../../../core/messages.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
@@ -11,7 +11,7 @@ import { getMarkdownTheme, theme } from "../theme/theme.ts";
  */
 export class CustomMessageComponent extends Container {
 	private message: CustomMessage<unknown>;
-	private customRenderer?: MessageRenderer;
+	private customRenderer?: MessageRendererRegistration;
 	private box: Box;
 	private customComponent?: Component;
 	private markdownTheme: MarkdownTheme;
@@ -19,7 +19,7 @@ export class CustomMessageComponent extends Container {
 
 	constructor(
 		message: CustomMessage<unknown>,
-		customRenderer?: MessageRenderer,
+		customRenderer?: MessageRendererRegistration,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 	) {
 		super();
@@ -58,11 +58,18 @@ export class CustomMessageComponent extends Container {
 		// Try custom renderer first - it handles its own styling
 		if (this.customRenderer) {
 			try {
-				const component = this.customRenderer(this.message, { expanded: this._expanded }, theme);
+				const component = this.customRenderer.renderer(this.message, { expanded: this._expanded }, theme);
 				if (component) {
-					// Custom renderer provides its own styled component
 					this.customComponent = component;
-					this.addChild(component);
+					const background = this.customRenderer.background;
+					if (background === undefined) {
+						this.addChild(component);
+					} else {
+						this.box.setBgFn((text) => theme.bg(background, text));
+						this.box.clear();
+						this.box.addChild(component);
+						this.addChild(this.box);
+					}
 					return;
 				}
 			} catch {
@@ -71,6 +78,7 @@ export class CustomMessageComponent extends Container {
 		}
 
 		// Default rendering uses our box
+		this.box.setBgFn((text) => theme.bg("customMessageBg", text));
 		this.addChild(this.box);
 		this.box.clear();
 

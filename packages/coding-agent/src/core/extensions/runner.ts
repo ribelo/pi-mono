@@ -40,7 +40,7 @@ import type {
 	LoadExtensionsResult,
 	MessageEndEvent,
 	MessageEndEventResult,
-	MessageRenderer,
+	MessageRendererRegistration,
 	ProjectTrustContext,
 	ProjectTrustEvent,
 	ProjectTrustEventResult,
@@ -547,11 +547,11 @@ export class ExtensionRunner {
 		return false;
 	}
 
-	getMessageRenderer(customType: string): MessageRenderer | undefined {
+	getMessageRenderer(customType: string): MessageRendererRegistration | undefined {
 		for (const ext of this.extensions) {
-			const renderer = ext.messageRenderers.get(customType);
-			if (renderer) {
-				return renderer;
+			const registration = ext.messageRenderers.get(customType);
+			if (registration) {
+				return registration;
 			}
 		}
 		return undefined;

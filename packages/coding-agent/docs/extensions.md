@@ -1549,9 +1549,17 @@ Use `sourceInfo` as the canonical provenance field. Do not infer ownership from 
 Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
 mode and would not execute if sent via `prompt`.
 
-### pi.registerMessageRenderer(customType, renderer)
+### pi.registerMessageRenderer(customType, renderer, options?)
 
 Register a custom TUI renderer for custom messages with your `customType`. Custom messages are created with `pi.sendMessage()` and participate in LLM context. See [Custom UI](#custom-ui).
+
+An optional third argument can request the outer message background while preserving the custom renderer's content and layout:
+
+```typescript
+pi.registerMessageRenderer("build-complete", renderer, { background: "toolSuccessBg" });
+```
+
+Supported backgrounds are `customMessageBg`, `toolPendingBg`, `toolSuccessBg`, and `toolErrorBg`. When omitted, the custom renderer remains responsible for its own shell and background, preserving existing behavior.
 
 ### pi.registerEntryRenderer(customType, renderer)
 
